@@ -1,0 +1,71 @@
+;; additional list utilities for Netlogo
+
+to-report cumulative-sum [lst]
+  report but-first reduce [ [a b] -> lput (last a + b) a] (fput [0] lst)
+end
+
+to-report insert-value-in-order [L x]
+  report (sentence filter [v -> v < x] L x filter [v -> v >= x] L)
+end
+
+to-report insert-values-in-order [L new]
+  report reduce [ [a b] -> insert-value-in-order a b] (fput L new)
+end
+
+to-report split-list-at-value [L x] ;; assume list is ordered
+  report (list filter [v -> v < x] L filter [v -> v >= x] L)
+end
+
+to-report zip [list1 list2]
+  report transpose (list list1 list2)
+;  report (map [[a b] -> (list a b)] list1 list2)
+end
+
+to-report unzip [lists]
+  report transpose lists
+end
+
+to-report transpose [lists]
+  let indexes n-values length first lists [i -> i]
+  report map [i -> map [lst -> item i lst] lists] indexes
+end
+
+to-report last-position [x L]
+  report length L - (position true (reverse matches x L)) - 1
+end
+
+to-report matches [x L]
+  report map [y -> x = y] L
+end
+
+to-report matching-positions [x L]
+  let positions n-values length L [i -> i]
+  report filter [i -> item i L = x] positions
+end
+
+to-report join-list [lst sep]
+  report reduce [ [a b] -> (word a sep b) ] lst
+end
+
+;; The MIT License (MIT)
+;;
+;; Copyright (c) 2021 David O'Sullivan
+;;
+;; Permission is hereby granted, free of charge, to any person
+;; obtaining a copy of this software and associated documentation
+;; files (the "Software"), to deal in the Software without restriction,
+;; including without limitation the rights to use, copy, modify, merge,
+;; publish, distribute, sublicense, and/or sell copies of the Software,
+;; and to  permit persons to whom the Software is furnished to do so,
+;; subject to the following conditions:
+;;
+;; The above copyright notice and this permission notice shall be included
+;; in all copies or substantial portions of the Software.
+;;
+;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+;; OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+;; DEALINGS IN THE SOFTWARE.
