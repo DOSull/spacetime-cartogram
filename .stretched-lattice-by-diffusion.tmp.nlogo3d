@@ -119,18 +119,12 @@ to displace-cells
 end
 
 to setup-patch-weights
-  ifelse initial-setup = "centre-weight" [
-    ask patches [
-      set weight 1
-    ]
-    ask patch 0 0 0 [
-      set weight centre-weight
-    ]
+  if inital-setup = "centre-we
+  ask patches [
+    set weight 1
   ]
-  [
-    ask patches [
-      set weight random-exponential 1
-    ]
+  ask patch 0 0 0 [
+    set weight centre-weight
   ]
   repeat smoothness [
     diffuse weight 0.5
@@ -211,8 +205,8 @@ end
 GRAPHICS-WINDOW
 0
 0
-338
-339
+278
+279
 -1
 -1
 30.0
@@ -225,12 +219,12 @@ GRAPHICS-WINDOW
 1
 1
 1
--5
-5
--5
-5
--5
-5
+-4
+4
+-4
+4
+-4
+4
 1
 1
 1
@@ -329,7 +323,7 @@ world-size
 world-size
 3
 25
-9.0
+7.0
 2
 1
 NIL
@@ -344,7 +338,7 @@ smoothness
 smoothness
 0
 world-size
-2.0
+3.0
 1
 1
 NIL
@@ -395,7 +389,7 @@ CHOOSER
 initial-setup
 initial-setup
 "random-exponential" "centre-weight"
-1
+0
 
 @#$#@#$#@
 ## WHAT IS IT?
