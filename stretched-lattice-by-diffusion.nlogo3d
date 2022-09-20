@@ -40,8 +40,8 @@ to go
     stop
   ]
   calculate-velocities
-  diffuse weight diffusion-rate
   displace-cells
+  diffuse weight diffusion-rate
   tick
 end
 
@@ -59,12 +59,6 @@ to make-lattice
   ]
   set exterior vertices with [outer-face?]
   set interior vertices with [not outer-face?]
-  set interior-edges lattice-edges with [is-interior-edge?]
-  set exterior-edges lattice-edges with [is-exterior-edge?]
-  set int-ext-edges lattice-edges with [is-interior-exterior-edge?]
-  ask (link-set exterior-edges int-ext-edges) [
-    set hidden? true
-  ]
   ask interior [
     hatch 1 [
       set breed displaced-vertices
@@ -87,20 +81,6 @@ to-report on-outer-face?
   report pxcor = min-pxcor or pxcor = max-pxcor
       or pycor = min-pycor or pycor = max-pycor
       or pzcor = min-pzcor or pzcor = max-pzcor
-end
-
-to-report is-interior-edge?
-  let inside [member? self interior] of both-ends
-  report (item 0 inside) and (item 1 inside)
-end
-
-to-report is-exterior-edge?
-  let outside [member? self exterior] of both-ends
-  report (item 0 outside) and (item 1 outside)
-end
-
-to-report is-interior-exterior-edge?
-  report not (is-interior-edge? or is-exterior-edge?)
 end
 
 to-report cell-at [v]
