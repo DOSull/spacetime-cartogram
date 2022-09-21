@@ -2,40 +2,75 @@ extensions [ palette ]
 
 breed [ vertices vertex ]
 breed [ displaced-vertices displaced-vertex ]
-undirected-link-breed [lattice-edges lattice-edge]
-undirected-link-breed [displacement-vectors displacement-vector]
+breed [ events event ]
+breed [ waypoints waypoint ]
+undirected-link-breed [ lattice-edges lattice-edge ]
+undirected-link-breed [ displacement-vectors displacement-vector ]
+undirected-link-breed [ timeline-edges timeline-edge ]
 
 vertices-own [
-  outer-face?
+  in-buffer?
   velocity
+  total-displacement
+]
+
+events-own [
+  my-timeline ;; ID of timeline this event is in
+  xytw        ;; raw xyt and w before rescaling
+  anchors     ;; the lattice vertices used to distort position
+  xyz         ;; xyz at start
+  xyz-prime   ;; distorted xyz
+]
+
+waypoints-own [
+  anchors     ;; lattice vertices used to distort position
+  xyz         ;; xyz at start
+  xyz-prime   ;; distorted xyz
 ]
 
 patches-own [
-  weight
+  weight      ;; the amount of stuff in each patch
 ]
 
 globals [
-  interior
-  exterior
+  interior         ;; patches inside the world by the buffer distance or more
+  buffer-region    ;; patches in the buffer region
+  xlims            ;; x y and z limits of the input data for rescaling
+  ylims
+  zlims
+  timeline-distorted?
 ]
 
 to setup
   clear-all
 
-  let dim floor ((world-size + 2) / 2)
+  ;; resize the world as required
+  let dim floor ((world-size + buffer * 2) / 2)
   resize-world (- dim) dim (- dim) dim (- dim) dim
+
+  set timeline-distorted? false
+
+  ;; initialise the limits so we can update with the max min from the data
+  set xlims [1e6 -1e6]
+  set ylims [1e6 -1e6]
+  set zlims [1e6 -1e6]
 
   make-lattice
   setup-patch-weights
+  ;; set an initial view
   setxyz (max-pxcor + world-width / 4) (min-pycor - world-height / 4) (max-pzcor + world-depth / 2)
+
   reset-ticks
 end
 
 
 to go
+  ;; if we're done then distort the timeline and stop
   if (max [weight] of patches / min [weight] of patches) - 1 < 1e-4 [
+    distort-timeline
     stop
   ]
+  ;; else recalculate velocities, displace vertices, diffuse the weight
   calculate-velocities
   displace-vertices
   diffuse weight diffusion-rate
@@ -43,28 +78,67 @@ to go
 end
 
 
+;; distort the timeline by a weighted sum of each event/waypoint anchor
+;; lattice vertices (this is a rough approach)
+to distort-timeline
+  ask (turtle-set events waypoints) [
+    set xyz (list xcor ycor zcor) ;; store the start x y z
+    ;; get anchor displacements and distance weights
+    let displacements map [a -> [total-displacement] of a] anchors
+    let weights distance-weights anchors 1
+    ;; sum the displacements weighted by distance
+    displace-by vector-sum (map [[v s] -> vector-scale v s] displacements weights)
+    set xyz-prime (list xcor ycor zcor)  ;; store the distorted x y z
+  ]
+  set timeline-distorted? true
+end
+
+;; so we can switch back and forward between start and distorted views
+to toggle-timeline
+  ifelse timeline-distorted? [
+    ask (turtle-set events waypoints) [
+      setxyz item 0 xyz item 1 xyz item 2 xyz
+    ]
+  ]
+  [
+    ask (turtle-set events waypoints) [
+      setxyz item 0 xyz-prime item 1 xyz-prime item 2 xyz-prime
+    ]
+  ]
+  set timeline-distorted? not timeline-distorted?
+end
+
+;; makes the lattice
 to make-lattice
+  ;; first put a vertex in each patch
   ask patches [
     sprout-vertices 1 [
       set shape "circle"
       set hidden? true
       set heading 0
       set pitch 90
-      set outer-face? on-outer-face?
+      set in-buffer? buffer-region?
       set hidden? true
+      set total-displacement [0 0 0]
     ]
   ]
-  set exterior vertices with [outer-face?]
-  set interior vertices with [not outer-face?]
+  ;; determine which are in the buffer or not
+  set buffer-region vertices with [buffer-region?]
+  set interior vertices with [not buffer-region?]
+  ;; the interior is where the vertices will get displaced
+  ;; so we make 'mirror' vertices in this region to
+  ;; show the displacement
   ask interior [
     hatch 1 [
       set breed displaced-vertices
       set hidden? true
+      ;; link to the 'parent' vertex
       create-displacement-vector-with myself [
         set color [255 127 0 255]
       ]
     ]
   ]
+  ;; link displaced-vertices to neighbors6 to make the lattice
   ask displaced-vertices [
     ask displaced-vertices-on neighbors6 [
       create-lattice-edge-with myself [
@@ -74,48 +148,48 @@ to make-lattice
   ]
 end
 
-to-report on-outer-face?
-  report pxcor = min-pxcor or pxcor = max-pxcor
-      or pycor = min-pycor or pycor = max-pycor
-      or pzcor = min-pzcor or pzcor = max-pzcor
+;; check for patches in the buffer region around the edges or not
+to-report buffer-region?
+  report pxcor < min-pxcor + buffer or pxcor > max-pxcor - buffer
+      or pycor < min-pycor + buffer or pycor > max-pycor - buffer
+      or pzcor < min-pzcor + buffer or pzcor > max-pzcor - buffer
 end
 
-to-report cell-at [v]
-  ;; weird bug here if I request cells-at then it ignores the dz value?
-  ;; reported as issue: https://github.com/NetLogo/NetLogo/issues/2046
-  report one-of ((turtles-at (item 0 v) (item 1 v) (item 2 v)) with [breed = vertices])
-end
-
-to displace-vertices
-  ask interior [
-    let vel velocity
-    ask displacement-vector-neighbors [
-      displace-by vel
-    ]
-  ]
-end
-
+;; various possible patch-weight setups
 to setup-patch-weights
-  ifelse initial-setup = "centre-weight" [
+  ;; from a file with timelines
+  ifelse initial-setup = "from-file" [
     ask patches [
-      set weight 1
+      set weight .5
     ]
-    ask patch 0 0 0 [
-      set weight centre-weight
+    load-timelines filename
+  ]
+  [ ;; these two also have a smoothing option
+    ;; bomb in a suitcase example
+    if initial-setup = "centre-weight" [
+      ask patches [
+        set weight 1
+      ]
+      ask patch 0 0 0 [
+        set weight centre-weight
+      ]
+    ]
+    ;; random exponential
+    if initial-setup = "random-exponential" [
+      ask patches [
+        set weight random-exponential 1
+      ]
+    ]
+    repeat smoothness [
+      diffuse weight 0.5
     ]
   ]
-  [
-    ask patches [
-      set weight random-exponential 1
-    ]
-  ]
-  repeat smoothness [
-    diffuse weight 0.5
-  ]
+  ;; initialise weights in the buffer to the mean of all
   let mean-weight mean [weight] of patches
-  ask exterior [
+  ask buffer-region [
     set weight mean-weight
   ]
+  ;; and rescale so we still have the same total volume
   let scale-factor 1 / mean [weight] of patches
   ask patches [
     set weight weight * scale-factor
@@ -123,6 +197,170 @@ to setup-patch-weights
 end
 
 
+;; reads timelines from a file
+;; id,x,y,t,w
+;; ID of timeline, x, y, and t values (in t order), and weight
+;; an event will be placed each x, y, t position, where it will
+;; add weight w to the patch. Events will be chained together in
+;; timelines based on shared ID. File should be sorted t and grouped
+;; by IDs
+to load-timelines [f]
+  carefully [
+    file-open f
+    let header file-read-line  ; skip first line
+    let current-id -1000       ; dummy value
+    let next-id -999           ; dummy value
+    let next-timeline []       ; list of strings of the current timeline
+    while [not file-at-end?] [
+      ;; read the next line
+      let next-line file-read-line
+      ;; get its ID
+      set next-id read-from-string item 0 split-string next-line ","
+      ;; if it's the same as the current ID then add the
+      ;; string to the next timeline list of strings
+      ifelse current-id = next-id [
+        set next-timeline fput next-line next-timeline
+      ]
+      [ ;; else make events from the list and start a new list
+        if length next-timeline > 0 [
+          create-events-from next-timeline
+        ]
+        set next-timeline (list next-line)
+        set current-id next-id
+      ]
+    ]
+    ;; if we've got another timeline then make more events
+    if length next-timeline > 0 [
+      create-events-from next-timeline
+    ]
+    file-close
+  ]
+  [
+    show error-message
+  ]
+  rescale-events
+  link-events-into-timelines
+end
+
+;; make events from a set of strings in the input file
+to create-events-from [strs]
+  foreach strs [str ->
+    create-events 1 [
+      let vars map [s -> read-from-string s] split-string str ","
+      set my-timeline item 0 vars
+      set xytw sublist vars 1 5
+      update-limits xytw
+      set shape "circle"
+      set size 0.2 * item 4 vars
+      set color green
+    ]
+  ]
+end
+
+;; updates information about min-max xyz in the input events
+to update-limits [vals]
+  set xlims list min list item 0 vals item 0 xlims max list item 0 vals item 1 xlims
+  set ylims list min list item 1 vals item 0 ylims max list item 1 vals item 1 ylims
+  set zlims list min list item 2 vals item 0 zlims max list item 2 vals item 1 zlims
+end
+
+;; rescale event locations to match the model world dimensions
+to rescale-events
+  ask events [
+    setxyz rescale item 0 xytw item 0 xlims item 1 xlims
+                               (min-pxcor + buffer + 1) (max-pxcor - buffer - 1)
+           rescale item 1 xytw item 0 ylims item 1 ylims
+                               (min-pycor + buffer + 1) (max-pycor - buffer - 1)
+           rescale item 2 xytw item 0 zlims item 1 zlims
+                               (min-pzcor + buffer + 1) (max-pzcor - buffer - 1)
+    set xyz (list xcor ycor zcor)    ; store the start x y z
+    set weight weight + item 3 xytw  ; add weight of event to the patch
+    set anchors get-anchors          ; set up anchor lattice vertices
+  ]
+end
+
+;; likely better ways to do this, but for now just grab vertices
+;; at the corners of the lattice cube this event/waypoint is in
+to-report get-anchors
+  report (list vertex-at floor xcor   floor ycor   floor zcor
+               vertex-at ceiling xcor floor ycor   floor zcor
+               vertex-at floor xcor   ceiling ycor floor zcor
+               vertex-at ceiling xcor ceiling ycor floor zcor
+               vertex-at floor xcor   floor ycor   ceiling zcor
+               vertex-at ceiling xcor floor ycor   ceiling zcor
+               vertex-at floor xcor   ceiling ycor ceiling zcor
+               vertex-at ceiling xcor ceiling ycor ceiling zcor)
+end
+
+;; utility function to get a single vertex at x y z
+;; note the breed specification is required because of bug in turtles-at
+;; see: https://github.com/NetLogo/NetLogo/issues/2046
+to-report vertex-at [x y z]
+  report one-of ((turtles-at x y z) with [breed = vertices])
+end
+
+;; rescales value x from x0-x1 scale to x2-x3 scale
+to-report rescale [x x0 x1 x2 x3]
+  report x2 + (x - x0) / (x1 - x0) * (x3 - x2)
+end
+
+;; for each set of events link them into a timeline
+to link-events-into-timelines
+  foreach remove-duplicates sort [my-timeline] of events [ id ->
+    create-timeline-from sort events with [ my-timeline = id ]
+  ]
+end
+
+;; from a list of events make a series of linking waypoints
+;; to create timelines
+to create-timeline-from [event-list]
+  ;; line them up and loop through (e1 e2) (e2 e3) etc
+  (foreach but-last event-list but-first event-list [ [e1 e2] ->
+    let pts (sentence e1 (get-points-between e1 e2 timeline-density) e2)
+    (foreach but-last pts but-first pts [[p1 p2] ->
+      ask p1 [
+        create-timeline-edge-with p2 [
+          set color lput 127 extract-rgb lime
+          set thickness 2
+        ]
+      ]
+    ])
+  ])
+end
+
+;; create a list of n waypoints equally spaced between e1 and e2
+to-report get-points-between [e1 e2 n]
+  let ends (list e1 e2)
+  let _x interpolate-values map [t -> [xcor] of t] ends n
+  let _y interpolate-values map [t -> [ycor] of t] ends n
+  let _z interpolate-values map [t -> [zcor] of t] ends n
+  report (map [[x y z] -> get-waypoint x y z] _x _y _z)
+end
+
+;; get a waypoint at the specified x y z
+to-report get-waypoint [x y z]
+  let me nobody
+  create-waypoints 1 [
+    set me self
+    setxyz x y z
+    set xyz (list x y z)
+    set size 0.1
+    set color lime
+    set shape "circle"
+;      set hidden? true
+    set anchors get-anchors
+  ]
+  report me
+end
+
+;; get evenly spaced n intermediate values in the range between list ends
+to-report interpolate-values [lst n]
+  let range-x item 1 lst - item 0 lst
+  let step-size range-x / (n + 1)
+  report but-first n-values (n + 1) [i -> item 0 lst + step-size * i]
+end
+
+; calculate velocity of a lattice vertex
 to calculate-velocities
   ask interior [
     let velocities [v-towards myself] of vertices-on neighbors6
@@ -130,11 +368,27 @@ to calculate-velocities
   ]
 end
 
+; get velocity towards a target (based on difference in their weights
+; and scaled by diffusion rate and the number of neighbours we are using (6)
 to-report v-towards [tgt]
   let d distance-between self tgt
   let speed ([weight] of tgt - weight) / d
   report map [x -> x * speed * diffusion-rate / 6] vector-to tgt
 end
+
+;; displace interior vertices by calculated velocities
+to displace-vertices
+  ask interior [
+    let vel velocity
+    ; also record displacement of the initial lattice vertex
+    set total-displacement vector-resultant total-displacement vel
+    ask displacement-vector-neighbors [
+      displace-by vel
+    ]
+  ]
+end
+
+
 
 ;; utility stuff
 to displace-by [vec]
@@ -181,15 +435,52 @@ to-report vector-sum [V]
   report reduce [[a b] -> vector-resultant a b] V
 end
 
+to-report vector-scale [v s]
+  report map [a -> a * s] v
+end
+
 to-report h-distance [ x ]
   report sqrt ((pxcor - [pxcor] of x) ^ 2 + (pycor - [pycor] of x) ^ 2)
 end
+
+
+to-report string-as-list [str]
+  report n-values length str [i -> item i str]
+end
+
+to-report split-string [str sep]
+  let words []
+  let this-word ""
+  foreach (string-as-list str) [ c ->
+    ifelse c = sep
+    [ set words sentence words this-word
+      set this-word "" ]
+    [ set this-word word this-word c ]
+  ]
+  ifelse this-word = ""
+  [ report words ]
+  [ report sentence words this-word ]
+end
+
+;; get a list of distance weights to a set of other turtles
+to-report distance-weights [others p]
+  let distances map [o -> [distance myself] of o] others
+  let distances-0 filter [d -> d = 0] distances
+  if length distances-0 > 0 [
+    let n length distances-0
+    report map [d -> ifelse-value d = 0 [1 / n] [0]] distances
+  ]
+  let rel-weights map [d -> 1 / (d ^ p)] distances
+  let tot-w sum rel-weights
+  report map [w -> w / tot-w] rel-weights
+end
+
 @#$#@#$#@
 GRAPHICS-WINDOW
 0
 0
-398
-399
+338
+339
 -1
 -1
 30.0
@@ -202,12 +493,12 @@ GRAPHICS-WINDOW
 1
 1
 1
--6
-6
--6
-6
--6
-6
+-5
+5
+-5
+5
+-5
+5
 1
 1
 1
@@ -266,10 +557,10 @@ NIL
 1
 
 BUTTON
-126
-282
-303
-315
+183
+235
+360
+268
 toggle-lattice-edges
 ask lattice-edges [\n  set hidden? not hidden?\n]\n \n
 NIL
@@ -283,10 +574,10 @@ NIL
 1
 
 SLIDER
-194
-134
-366
-167
+28
+376
+200
+409
 diffusion-rate
 diffusion-rate
 0.1
@@ -298,40 +589,40 @@ NIL
 HORIZONTAL
 
 SLIDER
-195
-22
-367
-55
+149
+24
+321
+57
 world-size
 world-size
 3
 25
-11.0
+9.0
 2
 1
 NIL
 HORIZONTAL
 
 SLIDER
-195
-96
-367
-129
+29
+338
+201
+371
 smoothness
 smoothness
 0
 world-size
-1.0
+0.0
 1
 1
 NIL
 HORIZONTAL
 
 MONITOR
-81
-184
-138
-229
+34
+170
+91
+215
 min-w
 min [weight] of patches
 3
@@ -339,10 +630,10 @@ min [weight] of patches
 11
 
 MONITOR
-149
-184
-206
-229
+102
+170
+159
+215
 max-w
 max [weight] of patches
 3
@@ -350,10 +641,10 @@ max [weight] of patches
 11
 
 SLIDER
-383
-98
-555
-131
+205
+377
+377
+410
 centre-weight
 centre-weight
 1
@@ -365,14 +656,92 @@ NIL
 HORIZONTAL
 
 CHOOSER
-384
-138
-577
-183
+235
+140
+428
+185
 initial-setup
 initial-setup
-"random-exponential" "centre-weight"
+"from-file" "random-exponential" "centre-weight"
 0
+
+SLIDER
+443
+191
+615
+224
+timeline-density
+timeline-density
+0
+20
+0.0
+1
+1
+NIL
+HORIZONTAL
+
+CHOOSER
+436
+140
+629
+185
+filename
+filename
+"tg-meeting.csv" "tg-day-in-the-life.csv"
+0
+
+SLIDER
+148
+60
+320
+93
+buffer
+buffer
+1
+5
+1.0
+1
+1
+NIL
+HORIZONTAL
+
+BUTTON
+30
+235
+169
+268
+NIL
+toggle-timeline
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+TEXTBOX
+211
+341
+361
+371
+These are non-file setup options
+12
+0.0
+1
+
+MONITOR
+32
+273
+155
+318
+NIL
+timeline-distorted?
+0
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
