@@ -162,7 +162,7 @@ to setup-patch-weights
     ask patches [
       set weight 1 / relative-weight-of-events
     ]
-    load-timelines filename
+    load-timelines user-file
   ]
   ;; these two also have a smoothing option
   ;; bomb in a suitcase example
@@ -664,10 +664,10 @@ initial-setup
 0
 
 SLIDER
-443
-191
-615
-224
+435
+149
+607
+182
 timeline-density
 timeline-density
 0
@@ -677,16 +677,6 @@ timeline-density
 1
 NIL
 HORIZONTAL
-
-CHOOSER
-436
-140
-629
-185
-filename
-filename
-"tg-meeting.csv" "tg-day-in-the-life.csv"
-0
 
 SLIDER
 148
