@@ -1,4 +1,4 @@
-extensions [ palette ]
+extensions [ palette matrix ]
 
 breed [ vertices vertex ]
 breed [ displaced-vertices displaced-vertex ]
@@ -83,11 +83,12 @@ end
 to distort-timeline
   ask (turtle-set events waypoints) [
     set xyz (list xcor ycor zcor) ;; store the start x y z
+    displace-by interpolate-components
     ;; get anchor displacements and distance weights
-    let displacements map [a -> [total-displacement] of a] anchors
-    let weights distance-weights anchors 1
-    ;; sum the displacements weighted by distance
-    displace-by vector-sum (map [[v s] -> vector-scale v s] displacements weights)
+;    let displacements map [a -> [total-displacement] of a] anchors
+;    let weights distance-weights anchors 1
+;    ;; sum the displacements weighted by distance
+;    displace-by vector-sum (map [[v s] -> vector-scale v s] displacements weights)
     set xyz-prime (list xcor ycor zcor)  ;; store the distorted x y z
   ]
   set timeline-distorted? true
@@ -114,6 +115,7 @@ to make-lattice
   ask patches [
     sprout-vertices 1 [
       set shape "circle"
+      set color magenta
       set hidden? true
       set heading 0
       set pitch 90
@@ -134,7 +136,7 @@ to make-lattice
       set hidden? true
       ;; link to the 'parent' vertex
       create-displacement-vector-with myself [
-        set color [255 127 0 255]
+        set color [255 127 0 150]
       ]
     ]
   ]
@@ -142,7 +144,7 @@ to make-lattice
   ask displaced-vertices [
     ask displaced-vertices-on neighbors6 [
       create-lattice-edge-with myself [
-        set color [255 255 255 127]
+        set color [255 255 255 150]
       ]
     ]
   ]
@@ -162,7 +164,9 @@ to setup-patch-weights
     ask patches [
       set weight 1 / relative-weight-of-events
     ]
-    load-timelines user-file
+    ifelse not (filename = "")
+    [ load-timelines filename ]
+    [ load-timelines user-file ]
   ]
   ;; these two also have a smoothing option
   ;; bomb in a suitcase example
@@ -281,21 +285,21 @@ end
 ;; likely better ways to do this, but for now just grab vertices
 ;; at the corners of the lattice cube this event/waypoint is in
 to-report get-anchors
-  report (list vertex-at floor xcor   floor ycor   floor zcor
-               vertex-at ceiling xcor floor ycor   floor zcor
-               vertex-at floor xcor   ceiling ycor floor zcor
-               vertex-at ceiling xcor ceiling ycor floor zcor
-               vertex-at floor xcor   floor ycor   ceiling zcor
-               vertex-at ceiling xcor floor ycor   ceiling zcor
-               vertex-at floor xcor   ceiling ycor ceiling zcor
-               vertex-at ceiling xcor ceiling ycor ceiling zcor)
+  let x get-integer-bounds xcor ; show x
+  let y get-integer-bounds ycor ; show y
+  let z get-integer-bounds zcor ; show z
+  let corners [[0 0 0] [1 0 0] [0 1 0] [1 1 0]
+               [0 0 1] [1 0 1] [0 1 1] [1 1 1]]
+  report map [c -> vertex-on item (item 0 c) x
+                             item (item 1 c) y
+                             item (item 2 c) z] corners
 end
 
 ;; utility function to get a single vertex at x y z
 ;; note the breed specification is required because of bug in turtles-at
 ;; see: https://github.com/NetLogo/NetLogo/issues/2046
-to-report vertex-at [x y z]
-  report one-of ((turtles-at x y z) with [breed = vertices])
+to-report vertex-on [x y z]
+  report one-of ((turtles-on patch x y z) with [breed = vertices])
 end
 
 ;; rescales value x from x0-x1 scale to x2-x3 scale
@@ -343,6 +347,9 @@ to-report get-waypoint [x y z]
     set me self
     setxyz x y z
     set xyz (list x y z)
+    if weight-waypoints? [
+      set weight weight + 1 / timeline-density
+    ]
     set size 0.1
     set color lime
     set shape "circle"
@@ -473,6 +480,31 @@ to-report distance-weights [others p]
   let tot-w sum rel-weights
   report map [w -> w / tot-w] rel-weights
 end
+
+to-report get-integer-bounds [x]
+  let lower floor x
+  let upper ceiling x
+  if lower = upper [
+    ifelse random 2 = 0
+    [ set lower lower - 1 ]
+    [ set upper upper + 1 ]
+  ]
+  report (list lower upper)
+end
+
+to-report interpolate-components
+  let x map [a -> [xcor] of a] anchors
+  let y map [a -> [ycor] of a] anchors
+  let z map [a -> [zcor] of a] anchors
+  let result []
+  foreach [0 1 2] [ i ->
+    let components map [a -> item i [total-displacement] of a] anchors
+    let data matrix:from-column-list (list components x y z)
+    let coeffs item 0 matrix:regress data
+    set result lput (sum (map [[b xi] -> b * xi] (fput 1 xyz) coeffs)) result
+  ]
+  report result
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
 0
@@ -580,7 +612,7 @@ diffusion-rate
 diffusion-rate
 0.1
 0.9
-0.87
+0.5
 0.01
 1
 NIL
@@ -610,7 +642,7 @@ smoothing
 smoothing
 0
 world-size
-1.0
+3.0
 1
 1
 NIL
@@ -671,8 +703,8 @@ SLIDER
 timeline-density
 timeline-density
 0
-50
-4.0
+20
+3.0
 1
 1
 NIL
@@ -740,11 +772,63 @@ relative-weight-of-events
 relative-weight-of-events
 0.1
 10
-2.0
+7.5
 0.1
 1
 NIL
 HORIZONTAL
+
+SWITCH
+443
+207
+630
+240
+weight-waypoints?
+weight-waypoints?
+1
+1
+-1000
+
+INPUTBOX
+644
+133
+802
+193
+filename
+tg-meeting.csv
+1
+0
+String
+
+TEXTBOX
+475
+247
+625
+265
+EXPERIMENTAL!
+12
+0.0
+1
+
+TEXTBOX
+647
+195
+797
+225
+set filename to blank to load from dialog
+12
+0.0
+1
+
+TEXTBOX
+669
+27
+819
+95
+DON'T FORGET TO TURN OFF THE WIREFRAME IN THE VIEWER SETTINGS!
+14
+15.0
+1
 
 @#$#@#$#@
 ## WHAT IS IT?
