@@ -1,44 +1,52 @@
 extensions [ palette matrix ]
 
+;; nodes in the lattice
 breed [ vertices vertex ]
+;; nodes in the lattice after displacement to make room for events
 breed [ displaced-vertices displaced-vertex ]
+;; events in the timeline
 breed [ events event ]
+;; points along a spacetime trajectory
 breed [ waypoints waypoint ]
+
+;; edges in the 3D spacetime lattice
 undirected-link-breed [ lattice-edges lattice-edge ]
+;; lines to show displacement from initial location of vertices
 undirected-link-breed [ displacement-vectors displacement-vector ]
+;; lines connecting waypoints and events in the spacetime trajectory
 undirected-link-breed [ timeline-edges timeline-edge ]
 
 vertices-own [
-  in-buffer?
-  velocity
-  total-displacement
+  in-buffer?          ;; is the vertex in the 'buffer space' around the lattice
+  velocity            ;; current velocity of movement of this vertex
+  total-displacement  ;; its total displacement from its original location
 ]
 
 events-own [
-  my-timeline ;; ID of timeline this event is in
-  xytw        ;; raw xyt and w before rescaling
-  anchors     ;; the lattice vertices used to distort position
-  xyz         ;; xyz at start
-  xyz-prime   ;; distorted xyz
+  my-timeline         ;; ID of timeline this event is in
+  xytw                ;; raw xyt and w before rescaling
+  anchors             ;; lattice vertices used to distort position
+  xyz                 ;; xyz at start
+  xyz-prime           ;; distorted xyz
 ]
 
 waypoints-own [
-  anchors     ;; lattice vertices used to distort position
-  xyz         ;; xyz at start
-  xyz-prime   ;; distorted xyz
+  anchors             ;; lattice vertices used to distort position
+  xyz                 ;; xyz at start
+  xyz-prime           ;; distorted xyz
 ]
 
 patches-own [
-  weight      ;; the amount of stuff in each patch
+  weight              ;; the amount of stuff in each patch (voxel)
 ]
 
 globals [
-  interior         ;; patches inside the world by the buffer distance or more
-  buffer-region    ;; patches in the buffer region
-  xlims            ;; x y and z limits of the input data for rescaling
+  interior            ;; patches inside the world by the buffer distance or more
+  buffer-region       ;; patches in the buffer region
+  xlims               ;; x y and z limits of the input data for rescaling
   ylims
   zlims
-  timeline-distorted?
+  timeline-distorted? ;; is the timeline currently displayed 'distorted' by the spacetime lattice?
 ]
 
 to setup
@@ -50,20 +58,21 @@ to setup
 
   set timeline-distorted? false
 
-  ;; initialise the limits so we can update with the max min from the data
+  ;; initialise the limits so we can update with max min from the data
   set xlims [1e6 -1e6]
   set ylims [1e6 -1e6]
   set zlims [1e6 -1e6]
 
   make-lattice
   setup-patch-weights
+
   ;; set an initial view
   setxyz (max-pxcor + world-width / 4) (min-pycor - world-height / 4) (max-pzcor + world-depth / 2)
-
   reset-ticks
 end
 
 
+;; main loop
 to go
   ;; if we're done then distort the timeline and stop
   if (max [weight] of patches / min [weight] of patches) - 1 < 1e-4 [
@@ -82,7 +91,7 @@ end
 ;; lattice vertices (this is a rough approach)
 to distort-timeline
   ask (turtle-set events waypoints) [
-    set xyz (list xcor ycor zcor) ;; store the start x y z
+    set xyz (list xcor ycor zcor)        ;; store the start x y z
     displace-by interpolate-components
     set xyz-prime (list xcor ycor zcor)  ;; store the distorted x y z
   ]
@@ -111,27 +120,29 @@ to make-lattice
     sprout-vertices 1 [
       set shape "circle"
       set color magenta
-      set hidden? true
+      set size 0.2
+      set hidden? true   ;; we don't want to see them!
       set heading 0
       set pitch 90
       set in-buffer? buffer-region?
-      set hidden? true
       set total-displacement [0 0 0]
     ]
   ]
   ;; determine which are in the buffer or not
   set buffer-region vertices with [buffer-region?]
-  set interior vertices with [not buffer-region?]
+  set interior      vertices with [not buffer-region?]
   ;; the interior is where the vertices will get displaced
   ;; so we make 'mirror' displaced-vertices in this region to
-  ;; show the displacement
+  ;; show the displacement. These are initially zero length,
+  ;; but as displacement occurs they grow and become visible
   ask interior [
     hatch 1 [
       set breed displaced-vertices
       set hidden? true
       ;; link to the 'parent' vertex
       create-displacement-vector-with myself [
-        set color [255 127 0 150]
+        set color [255 128 0 200]
+        set thickness 0.1
       ]
     ]
   ]
@@ -139,13 +150,14 @@ to make-lattice
   ask displaced-vertices [
     ask displaced-vertices-on neighbors6 [
       create-lattice-edge-with myself [
-        set color [255 255 255 150]
+        set color [255 255 255 100]
+        set thickness 0.05
       ]
     ]
   ]
 end
 
-;; check for patches in the buffer region around the edges or not
+;; check for patches in the buffer region around the outer faces or not
 to-report buffer-region?
   report pxcor < min-pxcor + buffer or pxcor > max-pxcor - buffer
       or pycor < min-pycor + buffer or pycor > max-pycor - buffer
@@ -159,9 +171,9 @@ to setup-patch-weights
     ask patches [
       set weight 1 / relative-weight-of-events
     ]
-    ifelse not (filename = "")
-    [ load-timelines filename ]
+    ifelse filename = ""
     [ load-timelines user-file ]
+    [ load-timelines filename ]
   ]
   ;; these two also have a smoothing option
   ;; bomb in a suitcase example
@@ -216,7 +228,7 @@ to load-timelines [f]
       set next-id read-from-string item 0 split-string next-line ","
       ;; if it's the same as the current ID then add the
       ;; string to the next timeline list of strings
-      ifelse current-id = next-id [
+      ifelse next-id = current-id [
         set next-timeline fput next-line next-timeline
       ]
       [ ;; else make events from the list and start a new list
@@ -257,9 +269,9 @@ end
 
 ;; updates information about min-max xyz in the input events
 to update-limits [vals]
-  set xlims list min list item 0 vals item 0 xlims max list item 0 vals item 1 xlims
-  set ylims list min list item 1 vals item 0 ylims max list item 1 vals item 1 ylims
-  set zlims list min list item 2 vals item 0 zlims max list item 2 vals item 1 zlims
+  set xlims list (min list (item 0 vals) (item 0 xlims)) (max list (item 0 vals) (item 1 xlims))
+  set ylims list (min list (item 1 vals) (item 0 ylims)) (max list (item 1 vals) (item 1 ylims))
+  set zlims list (min list (item 2 vals) (item 0 zlims)) (max list (item 2 vals) (item 1 zlims))
 end
 
 ;; rescale event locations to match the model world dimensions
@@ -280,9 +292,9 @@ end
 ;; likely better ways to do this, but for now just grab vertices
 ;; at the corners of the lattice cube this event/waypoint is in
 to-report get-anchors
-  let x get-integer-bounds xcor ; show x
-  let y get-integer-bounds ycor ; show y
-  let z get-integer-bounds zcor ; show z
+  let x get-integer-bounds xcor   ; get-integer-bounds returns a pair of
+  let y get-integer-bounds ycor   ; integers differing by 1 that contain
+  let z get-integer-bounds zcor   ; the float value supplied
   let corners [[0 0 0] [1 0 0] [0 1 0] [1 1 0]
                [0 0 1] [1 0 1] [0 1 1] [1 1 1]]
   report map [c -> vertex-on item (item 0 c) x
@@ -314,12 +326,14 @@ end
 to create-timeline-from [event-list]
   ;; line them up and loop through (e1 e2) (e2 e3) etc
   (foreach but-last event-list but-first event-list [ [e1 e2] ->
-    let pts (sentence e1 (get-points-between e1 e2 timeline-density) e2)
+    let t-delta abs ([zcor] of e2 - [zcor] of e1)
+    ; show t-delta
+    let pts (sentence e1 (get-points-between e1 e2 ceiling (timeline-density * t-delta)) e2)
     (foreach but-last pts but-first pts [[p1 p2] ->
       ask p1 [
         create-timeline-edge-with p2 [
           set color lput 150 extract-rgb lime
-          set thickness 2
+          set thickness 0.25
         ]
       ]
     ])
@@ -343,7 +357,7 @@ to-report get-waypoint [x y z]
     setxyz x y z
     set xyz (list x y z)
     if weight-waypoints? [
-      set weight weight + 1 / timeline-density
+      set weight weight + 1
     ]
     set size 0.1
     set color lime
@@ -380,11 +394,10 @@ end
 ;; displace interior vertices by calculated velocities
 to displace-vertices
   ask interior [
-    let vel velocity
     ; also record displacement of the initial lattice vertex
-    set total-displacement vector-resultant total-displacement vel
+    set total-displacement vector-resultant total-displacement velocity
     ask displacement-vector-neighbors [
-      displace-by vel
+      displace-by [velocity] of myself
     ]
   ]
 end
@@ -440,9 +453,6 @@ to-report vector-scale [v s]
   report map [a -> a * s] v
 end
 
-to-report h-distance [ x ]
-  report sqrt ((pxcor - [pxcor] of x) ^ 2 + (pycor - [pycor] of x) ^ 2)
-end
 
 
 to-report string-as-list [str]
@@ -491,8 +501,8 @@ end
 GRAPHICS-WINDOW
 0
 0
-398
-399
+518
+519
 -1
 -1
 30.0
@@ -505,12 +515,12 @@ GRAPHICS-WINDOW
 1
 1
 1
--6
-6
--6
-6
--6
-6
+-8
+8
+-8
+8
+-8
+8
 1
 1
 1
@@ -594,7 +604,7 @@ diffusion-rate
 diffusion-rate
 0.1
 0.9
-0.5
+0.9
 0.01
 1
 NIL
@@ -609,7 +619,7 @@ world-size
 world-size
 3
 25
-9.0
+13.0
 2
 1
 NIL
@@ -624,7 +634,7 @@ smoothing
 smoothing
 0
 world-size
-3.0
+5.0
 1
 1
 NIL
@@ -637,7 +647,7 @@ MONITOR
 215
 min-w
 min [weight] of patches
-3
+4
 1
 11
 
@@ -648,7 +658,7 @@ MONITOR
 215
 max-w
 max [weight] of patches
-3
+4
 1
 11
 
@@ -685,8 +695,8 @@ SLIDER
 timeline-density
 timeline-density
 0
-20
-3.0
+50
+5.0
 1
 1
 NIL
@@ -722,7 +732,7 @@ NIL
 NIL
 NIL
 NIL
-1
+0
 
 TEXTBOX
 211
@@ -754,7 +764,7 @@ relative-weight-of-events
 relative-weight-of-events
 0.1
 10
-7.5
+6.0
 0.1
 1
 NIL
@@ -767,7 +777,7 @@ SWITCH
 240
 weight-waypoints?
 weight-waypoints?
-1
+0
 1
 -1000
 
@@ -777,7 +787,7 @@ INPUTBOX
 802
 193
 filename
-tg-meeting.csv
+tg-day-in-the-life.csv
 1
 0
 String
@@ -810,6 +820,23 @@ TEXTBOX
 DON'T FORGET TO TURN OFF THE WIREFRAME IN THE VIEWER SETTINGS!
 14
 15.0
+1
+
+BUTTON
+185
+285
+397
+318
+toggle-displacement-vectors
+ask displacement-vectors [\nset hidden? not hidden?\n]
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
 1
 
 @#$#@#$#@
@@ -1131,7 +1158,7 @@ false
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
 @#$#@#$#@
-NetLogo 3D 6.2.0
+NetLogo 3D 6.4.0
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
