@@ -25,11 +25,13 @@ vertices-own [
 events-own [
   my-timeline         ;; ID of timeline this event is in
   xytw                ;; raw xyt and w before rescaling
+  anchors             ;; lattice vertices used to distort position
   xyz                 ;; xyz at start
   xyz-prime           ;; distorted xyz
 ]
 
 waypoints-own [
+  anchors             ;; lattice vertices used to distort position
   xyz                 ;; xyz at start
   xyz-prime           ;; distorted xyz
 ]
@@ -283,6 +285,7 @@ to rescale-events
                                (min-pzcor + buffer + 1) (max-pzcor - buffer - 1)
     set xyz (list xcor ycor zcor)    ; store the start x y z
     set weight weight + item 3 xytw  ; add weight of event to the patch
+    set anchors get-anchors          ; set up anchor lattice vertices
   ]
 end
 
@@ -360,6 +363,7 @@ to-report get-waypoint [x y z]
     set color lime
     set shape "circle"
     set hidden? true
+    set anchors get-anchors
   ]
   report me
 end
@@ -481,10 +485,6 @@ to-report get-integer-bounds [x]
 end
 
 to-report interpolate-components
-  let my-x xcor
-  let my-y ycor
-  let my-z zcor
-  let anchors sublist sort-on [distancexyz my-x my-y my-z] other vertices 0 6
   let x map [a -> [xcor] of a] anchors
   let y map [a -> [ycor] of a] anchors
   let z map [a -> [zcor] of a] anchors
@@ -634,7 +634,7 @@ smoothing
 smoothing
 0
 world-size
-4.0
+5.0
 1
 1
 NIL
@@ -764,7 +764,7 @@ relative-weight-of-events
 relative-weight-of-events
 0.1
 10
-5.0
+6.0
 0.1
 1
 NIL
