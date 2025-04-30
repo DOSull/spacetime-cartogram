@@ -80,7 +80,7 @@ end
 ;; main loop
 to go
   ;; if we're done then distort the timeline and stop
-  if (max [weight] of patches / min [weight] of patches) - 1 < 1e-3 [
+  if (max [weight] of patches / min [weight] of patches) - 1 < 1e-2 [
     distort-timeline
     stop
   ]
@@ -513,19 +513,20 @@ to-report flatten-list [lst]
 end
 
 to-report get-kernel-offsets
-  report filter [coords -> not (item 0 coords = 0 and item 1 coords = 0 and item 2 coords = 0) ]
+  report filter [coords -> sum map [x -> abs x] coords < 3 ]
+         filter [coords -> not (item 0 coords = 0 and item 1 coords = 0 and item 2 coords = 0) ]
             map [x -> flatten-list x] pairs range-from-to -1 2 pairs range-from-to -1 2 range-from-to -1 2
 end
 
 to-report get-kernel-weights
   let dists map [coords -> distance-xyt coords time-x] kernel-offsets
-  let inv-dists map [d -> 1 / d] dists
-  let sum-w sum inv-dists
-  report map [x -> diffusion-rate * x / sum-w] inv-dists
+  let inv-dist2 map [d -> 1 / d ^ 2] dists
+  let sum-w sum inv-dist2
+  report map [x -> diffusion-rate * x / sum-w] inv-dist2
 end
 
 to-report distance-xyt [xyt k]
-  report sqrt ((item 0 xyt ^ 2) + (item 1 xyt ^ 2) + (k * item 2 xyt) ^ 2)
+  report sqrt ((item 0 xyt ^ 2) + (item 1 xyt ^ 2) + (item 2 xyt / k) ^ 2)
 end
 
 to my-diffuse [k]
@@ -550,8 +551,8 @@ end
 GRAPHICS-WINDOW
 0
 0
-518
-519
+698
+699
 -1
 -1
 30.0
@@ -564,12 +565,12 @@ GRAPHICS-WINDOW
 1
 1
 1
--8
-8
--8
-8
--8
-8
+-11
+11
+-11
+11
+-11
+11
 1
 1
 1
@@ -653,7 +654,7 @@ diffusion-rate
 diffusion-rate
 0.1
 0.9
-0.75
+0.9
 0.01
 1
 NIL
@@ -760,7 +761,7 @@ buffer
 buffer
 1
 5
-2.0
+5.0
 1
 1
 NIL
@@ -895,10 +896,10 @@ SLIDER
 346
 time-x
 time-x
-0.1
-10
-10.0
-0.1
+0.33
+3
+0.5
+0.01
 1
 NIL
 HORIZONTAL

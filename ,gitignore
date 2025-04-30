@@ -1,1 +1,2 @@
-*.tmp.nlogo3d
+*tmp*
+.DS_Store
