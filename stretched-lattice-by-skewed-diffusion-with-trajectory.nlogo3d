@@ -71,6 +71,7 @@ to setup
 
   make-lattice
   setup-patch-weights
+  set-lattice-alphas
   ;; set an initial view
   setxyz (max-pxcor + world-width / 4) (min-pycor - world-height / 4) (max-pzcor + world-depth / 2)
   reset-ticks
@@ -149,10 +150,12 @@ to make-lattice
       create-displacement-vector-with myself [
         set color [255 128 0 200]
         set thickness 0.1
+        set hidden? true
       ]
     ]
   ]
   ;; link displaced-vertices to neighbors6 to make the lattice
+;  ask displaced-vertices with [pxcor mod 2 = 0 and pycor mod 2 = 0 and pzcor mod 2 = 0] [
   ask displaced-vertices [
     ask displaced-vertices-on neighbors6 [
       create-lattice-edge-with myself [
@@ -161,6 +164,18 @@ to make-lattice
       ]
     ]
   ]
+end
+
+to set-lattice-alphas
+  let min-w min [get-edge-weight] of lattice-edges
+  let max-w max [get-edge-weight] of lattice-edges
+  ask lattice-edges [
+    set color (list 255 255 255 (rescale get-edge-weight min-w max-w 10 255))
+  ]
+end
+
+to-report get-edge-weight
+  report mean [[weight] of patch-here] of both-ends
 end
 
 ;; check for patches in the buffer region around the outer faces or not
@@ -333,9 +348,11 @@ end
 to create-timeline-from [event-list]
   ;; line them up and loop through (e1 e2) (e2 e3) etc
   (foreach but-last event-list but-first event-list [ [e1 e2] ->
-    let t-delta abs ([zcor] of e2 - [zcor] of e1)
-    ; show t-delta
-    let pts (sentence e1 (get-points-between e1 e2 ceiling (timeline-density * t-delta)) e2)
+    let d-xyz nobody
+    ask e1 [ set d-xyz distance e2 ]
+    let pts (sentence e1 (get-points-between e1 e2 ceiling (timeline-density * d-xyz)) e2)
+;    let t-delta abs ([zcor] of e2 - [zcor] of e1)
+;    let pts (sentence e1 (get-points-between e1 e2 ceiling (timeline-density * t-delta)) e2)
     (foreach but-last pts but-first pts [[p1 p2] ->
       ask p1 [
         create-timeline-edge-with p2 [
@@ -369,7 +386,7 @@ to-report get-waypoint [x y z]
     set size 0.1
     set color lime
     set shape "circle"
-    set hidden? true
+    set hidden? false
   ]
   report me
 end
@@ -745,9 +762,9 @@ SLIDER
 timeline-density
 timeline-density
 0
-50
-5.0
-1
+10
+4.0
+0.1
 1
 NIL
 HORIZONTAL
@@ -898,7 +915,7 @@ time-x
 time-x
 0.33
 3
-0.5
+1.0
 0.01
 1
 NIL
