@@ -61,7 +61,7 @@ to setup
   let dim floor ((world-size + buffer * 2) / 2)
   resize-world (- dim) dim (- dim) dim (- dim) dim
 
-  read-and-display-bitmap-file "frame 2.pnm" 1 2 3 5 5
+  read-and-display-bitmap-file "frame 2.pnm" 1 2 3 (1 / 72)
 
   set timeline-distorted? false
 
@@ -407,8 +407,8 @@ to displace-vertices
   ]
 end
 
-;; display specified image file at specified location, width, height
-to read-and-display-bitmap-file [image-filename cx cy cz width height]
+;; display specified image file at specified location with given px size
+to read-and-display-bitmap-file [image-filename cx cy cz px]
   let this-image-id length images
   let data map [x -> item 0 x] csv:from-file image-filename  ;; space-delimited
   ;; Read number of rows and columns
@@ -417,16 +417,14 @@ to read-and-display-bitmap-file [image-filename cx cy cz width height]
   let [nrows ncols] sublist data 0 2
   ;; Read the rest of the values
   set data sublist data 2 length data
-  let [l t] (list (cx - width / 2) (cy + height / 2))
+  let [l t] (list (cx - ncols * px / 2) (cy + nrows * px / 2))
   let z 0
-  let [dw dh] (list (width / ncols) (height / nrows))
-  let pixel-size min (list dw dh)
   foreach range (length data / 3) [ i ->
     create-pixels 1 [
       set shape "square"
-      set size pixel-size
+      set size px
       set heading 0
-      setxyz (l + (dw * (i mod ncols))) cy (t - (dh * (floor (i / ncols))))
+      setxyz (l + (px * (i mod ncols))) cy (t - (px * (floor (i / ncols))))
       set color sublist data (i * 3) (i * 3 + 3)
       set image-id this-image-id
     ]
